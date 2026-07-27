@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/task-conf-v1.json",
+  "title": "Task Config Schema",
+  "description": "任务配置实例（{task_id}.conf）的 JSON Schema",
+  "type": "object",
+  "required": ["task_id", "rule_id", "source", "pipeline", "output"],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]+$" },
+    "rule_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]+$" },
+    "source": { "type": "object", "required": ["type"] },
+    "pipeline": { "type": "array", "items": { "type": "object", "required": ["function"] } },
+    "output": { "type": "object", "required": ["mode"] },
+    "callback": { "type": "object" }
+  }
+}

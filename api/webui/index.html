@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<!-- 实际 lang 由 i18n.js 根据 localStorage 动态设置 -->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RuleCraft — Automation Rule Engine</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="sidebar">
+  <div class="logo">⚙️ RuleCraft</div>
+  <ul class="nav-links">
+    <li><a href="#dashboard" class="active" data-page="dashboard" data-i18n="nav.dashboard">📊 Dashboard</a></li>
+    <li><a href="#tasks" data-page="tasks" data-i18n="nav.tasks">📋 Task Management</a></li>
+    <li><a href="#plugins" data-page="plugins" data-i18n="nav.plugins">🔌 Plugin List</a></li>
+    <li class="nav-parent">
+      <a href="#" class="nav-parent-toggle" onclick="toggleEditorMenu(event)" data-i18n="nav.plugin-editor">🔧 Plugin Editor <span class="collapse-arrow">▶</span></a>
+      <ul class="nav-sublinks" style="display:none">
+        <li><a href="#plugin-editor-input" data-page="plugin-editor-input" data-i18n="nav.plugin-editor-input">📥 Input Plugin</a></li>
+        <li><a href="#plugin-editor-output" data-page="plugin-editor-output" data-i18n="nav.plugin-editor-output">📤 Output Plugin</a></li>
+        <li><a href="#plugin-editor-edit" data-page="plugin-editor-edit" data-i18n="nav.plugin-editor-edit">📝 Edit Plugin</a></li>
+        <li><a href="#plugin-editor-exit" data-page="plugin-editor-exit" data-i18n="nav.plugin-editor-exit">🚪 Exit Editor</a></li>
+      </ul>
+    </li>
+    <li><a href="#market" data-page="market" data-i18n="nav.market">🛒 Marketplace</a></li>
+    <li><a href="#logs" data-page="logs" data-i18n="nav.logs">📝 Log Viewer</a></li>
+    <li><a href="#settings" data-page="settings" data-i18n="nav.settings">⚙️ Settings</a></li>
+    <li><a href="#manual" data-page="manual" data-i18n="nav.manual">📖 User Manual</a></li>
+  </ul>
+</nav>
+
+<main class="content">
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <h1 id="page-title" data-i18n="page.dashboard">📊 Dashboard</h1>
+    </div>
+    <div class="toolbar-right">
+      <div class="lang-selector-wrapper">
+        <select id="lang-selector" onchange="setLang(this.value)" title="Language">
+          <option value="zh-CN">🇨🇳 中文</option>
+          <option value="en">🇬🇧 English</option>
+        </select>
+      </div>
+      <span class="status-badge connected" id="connection-status">● Connected</span>
+    </div>
+  </header>
+
+  <!-- 仪表盘 -->
+  <section id="page-dashboard" class="page active">
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-value" id="stat-tasks">0</div><div class="stat-label" data-i18n="dashboard.active_tasks">活跃任务</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-rules">0</div><div class="stat-label" data-i18n="dashboard.rules">规则数</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-plugins">0</div><div class="stat-label" data-i18n="dashboard.registered_plugins">已注册插件</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-states">0</div><div class="stat-label" data-i18n="dashboard.state_keys">状态键数</div></div>
+    </div>
+    <div class="card">
+      <h3 data-i18n="dashboard.current_status">当前系统状态</h3>
+      <pre id="state-viewer" class="json-viewer" data-i18n="dashboard.loading">dashboard.loading</pre>
+    </div>
+  </section>
+
+  <!-- 任务管理 -->
+  <section id="page-tasks" class="page">
+    <div class="card">
+      <h3><span data-i18n="tasks.title">任务列表</span> <button class="btn btn-sm" onclick="loadTasks()" data-i18n="tasks.refresh">🔄 刷新</button> <button class="btn btn-sm" style="background:#27ae60" onclick="addTask()" data-i18n="tasks.new">➕ 新建任务</button>
+        <span id="task-trigger-status" class="editor-status" style="display:none;font-size:12px;margin-left:12px"></span>
+      </h3>
+      <table id="task-table"><tr><td data-i18n="tasks.no_tasks">暂无任务</td></tr></table>
+    </div>
+  </section>
+
+
+  <!-- 插件列表 -->
+  <section id="page-plugins" class="page">
+    <div class="card">
+      <h3 data-i18n="plugins.registered">已注册插件</h3>
+      <div id="plugins-list" data-i18n="plugins.loading">加载中...</div>
+    </div>
+  </section>
+
+  <!-- 插件市场 -->
+  <section id="page-market" class="page">
+    <div class="card">
+      <h3><span data-i18n="market.title">插件市场</span> <button class="btn btn-sm" onclick="loadMarketPlugins()" data-i18n="market.refresh">🔄 刷新</button></h3>
+      <p class="hint" data-i18n="market.hint">从 Git 仓库（GitHub / Gitee）拉取社区插件。</p>
+      <div class="market-section">
+        <h4 data-i18n="market.repos">配置仓库</h4>
+        <div class="repo-form">
+          <input type="text" id="market-repo-url" placeholder="https://github.com/user/plugin-repo" />
+          <button class="btn btn-sm" onclick="addRepo()" data-i18n="market.add_repo">添加仓库</button>
+        </div>
+        <div id="repo-list"></div>
+      </div>
+      <div class="market-section">
+        <h4 data-i18n="market.available">可用插件</h4>
+        <div id="market-plugins" data-i18n="market.no_plugins">添加仓库后查看可用插件</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 日志查看 -->
+  <section id="page-logs" class="page">
+    <div class="card">
+      <h3 data-i18n="logs.title">日志查看器</h3>
+      <div class="log-controls">
+        <input type="text" id="log-task-id" data-i18n-placeholder="logs.task_placeholder" placeholder="task_id（留空=系统日志）" />
+        <button class="btn btn-sm" onclick="loadLogs()" data-i18n="logs.view">查看</button>
+      </div>
+      <pre id="log-viewer" class="json-viewer" data-i18n="logs.select_task">logs.select_task</pre>
+    </div>
+  </section>
+
+  <!-- 设置 -->
+  <section id="page-settings" class="page">
+    <div class="settings-tabs">
+      <button class="settings-tab active" onclick="switchSettingsTab('general')" data-i18n="settings.system">⚙️ 系统设置</button>
+      <button class="settings-tab" onclick="switchSettingsTab('about')" data-i18n="settings.about">ℹ️ 关于</button>
+    </div>
+
+    <!-- 系统设置 -->
+    <div id="settings-general" class="settings-panel active">
+      <div class="card">
+        <h3 data-i18n="settings.basic_section">基本设置</h3>
+        <div class="setting-row">
+          <label data-i18n="settings.interval">轮询间隔：</label>
+          <select id="setting-interval">
+            <option value="1" data-i18n="settings.1s">1 秒</option>
+            <option value="3" data-i18n="settings.3s">3 秒</option>
+            <option value="5" selected data-i18n="settings.5s">5 秒</option>
+            <option value="10" data-i18n="settings.10s">10 秒</option>
+            <option value="30" data-i18n="settings.30s">30 秒</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.notify_level">通知级别：</label>
+          <select id="setting-notify-level">
+            <option value="debug">Debug</option>
+            <option value="info" selected>Info</option>
+            <option value="warning">Warning</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label style="white-space:nowrap"><input type="checkbox" id="setting-autostart" /> <span data-i18n="settings.autostart">开机自动启动</span></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="settings.web_section">Web 服务</h3>
+        <div class="setting-row">
+          <label data-i18n="settings.port">端口号：</label>
+          <input type="number" id="setting-port" value="19530" min="1" max="65535" style="width:100px;padding:4px 8px" />
+          <span style="font-size:12px;color:#999;margin-left:8px" data-i18n="settings.port_hint">修改后需重启生效</span>
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.web_service">Web 服务：</label>
+          <button id="setting-toggle-web" class="btn btn-sm" onclick="toggleWebService()" data-i18n="settings.stop_web">停止 Web 服务</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="settings.net_section">网络插件端口</h3>
+        <p class="hint" data-i18n="settings.net_hint">配置内置网络监听插件的端口和鉴权密钥。修改后需重启生效。</p>
+        <div class="setting-row">
+          <label data-i18n="settings.http_in">HTTP 入站 (http_in)：</label>
+          <input type="number" id="plugin-port-http_in" value="19531" min="1" max="65535" style="width:80px;padding:4px 8px" />
+          <input type="text" id="plugin-auth-http_in" data-i18n-placeholder="settings.auth_key_placeholder" placeholder="鉴权密钥" style="flex:0.6;padding:4px 8px;margin-left:8px" />
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.tcp_udp_in">TCP/UDP 入站 (tcp_udp_in)：</label>
+          <input type="number" id="plugin-port-tcp_udp_in" value="19532" min="1" max="65535" style="width:80px;padding:4px 8px" />
+          <input type="text" id="plugin-auth-tcp_udp_in" data-i18n-placeholder="settings.auth_key_placeholder" placeholder="鉴权密钥" style="flex:0.6;padding:4px 8px;margin-left:8px" />
+        </div>
+        <div class="setting-row">
+          <label data-i18n="settings.websocket_in">WebSocket 入站 (websocket_in)：</label>
+          <input type="number" id="plugin-port-websocket_in" value="19533" min="1" max="65535" style="width:80px;padding:4px 8px" />
+          <input type="text" id="plugin-auth-websocket_in" data-i18n-placeholder="settings.auth_key_placeholder" placeholder="鉴权密钥" style="flex:0.6;padding:4px 8px;margin-left:8px" />
+        </div>
+        <div class="setting-row">
+          <label></label>
+          <button class="btn btn-sm btn-save" onclick="savePluginPorts()" data-i18n="settings.save_plugin_ports">💾 保存插件端口配置</button>
+          <span id="plugin-port-status" class="editor-status" style="display:none;margin-left:8px"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="settings.api_section">API 鉴权</h3>
+        <p class="hint" data-i18n="settings.api_hint">设置 API Key 后，访问 /api/debug 等接口需在请求头携带 X-API-Key。</p>
+        <div class="setting-row">
+          <label style="white-space:nowrap"><input type="checkbox" id="setting-api-enabled" onchange="toggleAPIKeyField()" /> <span data-i18n="settings.api_enable">启用 API Key 鉴权</span></label>
+        </div>
+        <div class="setting-row" id="setting-api-key-row" style="display:none">
+          <label data-i18n="settings.api_key">API Key：</label>
+          <input type="text" id="setting-api-key" data-i18n-placeholder="settings.api_key_placeholder" placeholder="输入 API 密钥" style="flex:1;padding:4px 8px;max-width:300px" />
+          <button class="btn btn-sm btn-save" onclick="saveAPIKey()" data-i18n="settings.save_button">保存</button>
+          <span id="api-key-status" class="editor-status" style="display:none;margin-left:8px"></span>
+        </div>
+        <div class="setting-row">
+          <button class="btn btn-sm" style="background:#3498db" onclick="loadSettings()" data-i18n="settings.refresh">🔄 刷新配置</button>
+          <button class="btn btn-sm btn-save" onclick="saveAllSettings()" data-i18n="settings.save_all">💾 保存全部设置</button>
+          <span id="settings-status" class="editor-status" style="display:none;margin-left:8px"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关于 -->
+    <div id="settings-about" class="settings-panel">
+      <div class="card about-content">
+        <div style="text-align:center;padding:10px 0">
+          <img src="logo.png" alt="RuleCraft">
+          <h2 style="font-size:22px;margin-bottom:4px">RuleCraft</h2>
+          <p style="color:#7f8c8d" data-i18n="settings.about_subtitle">Windows 轻量级自动化规则引擎</p>
+        </div>
+        <hr style="margin:16px 0;border:none;border-top:1px solid #eee" />
+        <div style="font-size:14px;line-height:1.8">
+          <p><strong data-i18n="about.version">版本：</strong> <span id="about-version">1.0.0</span></p>
+          <p><strong data-i18n="about.port">运行端口：</strong> <span id="about-port">19530</span></p>
+          <p><strong data-i18n="about.builtin_input">内置输入插件：</strong> 30+ </p>
+          <p><strong data-i18n="about.builtin_output">内置输出插件：</strong> 20+ </p>
+          <p><strong data-i18n="about.tech">技术栈：</strong> <span data-i18n="about.tech_value">Go + 原生 Win32 API + 嵌入式 Web UI</span></p>
+          <p style="margin-top:12px" data-i18n="settings.about_desc">RuleCraft 是一个轻量级的 Windows 自动化规则引擎，通过条件-动作（Condition-Action）模式实现系统自动化。支持多种输入传感器和输出执行器，提供 Web 管理界面进行规则配置。</p>
+          <p style="margin-top:8px" data-i18n="settings.about_oss">本项目为开源项目，遵循 MIT 许可证。</p>
+          <p style="margin-top:8px" data-i18n="settings.about_donate">如果你觉得功能不错，可以请我喝杯咖啡。</p>
+          <div class="pay-container">
+            <img src="alipay.png" alt="支付宝">
+            <img src="wechat.png" alt="微信">
+          </div>
+          <style>
+            .pay-container {
+              display: flex;
+              justify-content: center;
+              gap: 16px;
+              width: 100%;
+            }
+
+            .pay-container img {
+              flex: 1;                 /* 默认平分空间 */
+              max-width: 300px;        /* 最大不超过 300px */
+              width: 100%;             /* 适应小屏幕，防止超出溢出 */
+              height: auto;
+            }
+          </style>
+        </div>
+        <hr style="margin:16px 0;border:none;border-top:1px solid #eee" />
+        <div style="font-size:12px;color:#999;text-align:center">
+          <p>© 2026 RuleCraft Team</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- User Manual -->
+  <section id="page-manual" class="page">
+    <div class="card">
+      <h3 data-i18n="page.manual">📖 User Manual</h3>
+      <div id="manual-content" class="manual-content" style="font-size:14px;line-height:1.8;max-height:75vh;overflow-y:auto" data-i18n="dashboard.loading">加载中...</div>
+    </div>
+  </section>
+
+  <!-- 插件编辑器页面 -->
+  <section id="page-plugin-editor" class="page">
+    <div class="editor-main" style="width:100%">
+      <div id="editor-content">
+        <div id="editor-form-container" style="display:none"></div>
+      </div>
+      <div id="editor-actions" class="editor-actions" style="display:none">
+        <button class="btn btn-sm" style="background:#7f8c8d" onclick="previewPluginJSON()" data-i18n="editor.preview_json">👁 预览 JSON</button>
+        <button class="btn btn-sm btn-save" onclick="savePluginToDisk()" data-i18n="editor.save_to_disk">💾 保存到插件文件夹</button>
+        <button class="btn btn-sm" style="background:#e67e22" onclick="exportPluginZIP()" data-i18n="editor.export_zip">📦 导出 ZIP</button>
+        <span id="editor-status" class="editor-status"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 进程列表模态框 -->
+<div id="modal-overlay" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" id="modal-box">
+    <div class="modal-header"><span data-i18n="modal.process_title">进程列表</span><button class="btn btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">dashboard.loading</div>
+  </div>
+</div>
+
+<!-- 任务编辑器模态框 -->
+<div id="task-editor-overlay" class="modal-overlay" onclick="if(event.target===this)closeTaskEditor()">
+  <div class="modal-box editor-box">
+    <div class="modal-header">
+      <span id="editor-title" data-i18n="editor.task_editor_title">📝 编辑任务</span>
+      <div><button class="btn btn-sm btn-save" onclick="saveTaskEditor()" data-i18n="editor.save_btn">💾 保存</button> <button class="btn btn-sm" onclick="closeTaskEditor()" data-i18n="editor.close_btn">✕ 关闭</button></div>
+    </div>
+    <div class="modal-body editor-body" id="editor-body">
+      <!-- 基本信息 -->
+      <div class="editor-section">
+        <h4 data-i18n="editor.basic_section">基本信息</h4>
+        <div class="form-row">
+          <label data-i18n="editor.task_id_label">任务 ID</label><input type="text" id="edit-task-id" readonly class="input-readonly" />
+          <label data-i18n="editor.name_label">名称</label><input type="text" id="edit-task-name" />
+          <label><input type="checkbox" id="edit-task-enabled" checked data-i18n="editor.enabled_label" /> 启用</label>
+        </div>
+        <div class="form-row">
+          <label data-i18n="editor.desc_label">描述</label><input type="text" id="edit-task-desc" style="flex:3" />
+        </div>
+      </div>
+
+      <!-- 数据源 -->
+      <div class="editor-section">
+        <h4 data-i18n="editor.ds_section">输入数据（Input Data）
+          <button class="btn btn-xs" onclick="addDataSource()" data-i18n="editor.add_btn">➕ 添加</button>
+          <button class="btn btn-xs" style="background:#7f8c8d" onclick="showDataSourceHelp()" title="什么是输入数据？" data-i18n="editor.help_btn">ℹ️ 说明</button>
+        </h4>
+        <p class="hint" data-i18n="editor.ds_hint">选择输入插件，然后选该插件提供的数据字段。条件中将仅显示此处添加的字段。</p>
+        <table id="edit-datasources"><tr><td class="hint" data-i18n="editor.no_ds_text">暂无数据源</td></tr></table>
+      </div>
+
+      <!-- 条件编辑器 -->
+      <div class="editor-section">
+        <h4 data-i18n="editor.cond_section">触发条件（Conditions）</h4>
+        <p class="hint" data-i18n="editor.cond_hint">拖拽 ↕ 手柄可排序子节点。逻辑组可添加任意子条件，支持多重 AND / OR / NOT 嵌套。</p>
+        <div id="condition-tree" class="condition-tree">
+          <div class="hint" style="padding:8px" data-i18n="editor.cond_always_text">无条件（始终触发）</div>
+        </div>
+      </div>
+
+      <!-- 输出动作 -->
+      <div class="editor-section">
+        <h4 data-i18n="editor.output_section">输出动作（Outputs） <button class="btn btn-xs" onclick="addOutput()" data-i18n="editor.add_output">➕ 添加</button></h4>
+        <table id="edit-outputs"><tr><td class="hint" data-i18n="editor.no_output_text">暂无输出动作</td></tr></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 预览 JSON 模态框 -->
+<div id="preview-overlay" class="modal-overlay" onclick="if(event.target===this)closePreviewModal()">
+  <div class="modal-box" style="width:70%;max-width:700px">
+    <div class="modal-header">
+      <span data-i18n="preview.title">📄 插件规则 JSON 预览</span>
+      <button class="btn btn-sm" onclick="closePreviewModal()" data-i18n="preview.close">✕ 关闭</button>
+    </div>
+    <div class="modal-body">
+      <pre id="preview-json" class="json-viewer" style="max-height:60vh;overflow:auto;white-space:pre-wrap;font-family:monospace;font-size:12px"></pre>
+    </div>
+  </div>
+</div>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+<script src="plugin-editor.js"></script>
+</body>
+</html>

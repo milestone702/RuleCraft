@@ -1,0 +1,45 @@
+# === 编译产物 ===
+*.exe
+*.syso
+
+# === 运行时数据（用户创建，不提交）===
+config.json
+logs/
+Input_Plugins/*
+!Input_Plugins/example_processor/
+Output_Plugins/*
+!Output_Plugins/.gitkeep
+tasks/*
+!tasks/.gitkeep
+*.png
+*.jpg
+
+
+# === 开发工具 ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Windows 系统文件 ===
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# === Go 编译中间文件 ===
+*.o
+*.a
+*.obj
+*.lib
+*.dll
+
+# === 临时文件 ===
+tmp/
+temp/
+
+# === 大模型文件 ===
+.reasonix/
+reasonix.toml
+.qwen/
+

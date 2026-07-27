@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/rule-v1.json",
+  "title": "Rule Definition Schema",
+  "description": "规则插件定义文件的 JSON Schema",
+  "type": "object",
+  "required": ["plugin_id", "name", "version", "executable", "functions"],
+  "properties": {
+    "plugin_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]+$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "author": { "type": "string" },
+    "description": { "type": "string", "maxLength": 1024 },
+    "direction": { "type": "string", "enum": ["input", "output"], "default": "input" },
+    "executable": { "type": "object", "required": ["type", "path"] },
+    "functions": { "type": "object" },
+    "state_key_labels": {
+      "type": "object",
+      "description": "插件产出的状态键的中文备注，格式 {\"key\": \"描述\"}",
+      "additionalProperties": { "type": "string", "maxLength": 256 },
+      "example": { "processed.ssid": "处理后的 WiFi SSID（小写）" }
+    }
+  }
+}

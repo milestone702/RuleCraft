@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/task-v1.json",
+  "title": "Task Definition Schema",
+  "description": "任务调度配置文件（task.json）的 JSON Schema",
+  "type": "object",
+  "required": ["task_id", "name", "data_sources", "processors"],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]+$" },
+    "name": { "type": "string", "minLength": 1 },
+    "enabled": { "type": "boolean", "default": true },
+    "data_sources": { "type": "array", "items": { "type": "object", "required": ["id", "state_key"] } },
+    "processors": { "type": "array", "items": { "type": "object", "required": ["id", "rule_id", "config_instance", "input_mapping", "output_mapping"] } },
+    "condition": { "type": "object" },
+    "outputs": { "type": "array" }
+  }
+}

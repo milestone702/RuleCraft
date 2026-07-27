@@ -1,0 +1,40 @@
+{
+  "$schema": "../../schemas/rule-v1.json",
+  "plugin_id": "example_processor",
+  "name": "示例文本处理器",
+  "version": "1.0.0",
+  "author": "RuleCraft",
+  "description": "示例规则插件：将输入文本转为小写",
+  "direction": "input",
+  "executable": {
+    "type": "powershell",
+    "path": "Input_Plugins/example_processor/to_lowercase.ps1",
+    "args": ""
+  },
+  "execution_policy": {
+    "timeout_seconds": 30,
+    "retry_on_failure": 1
+  },
+  "functions": {
+    "to_lowercase": {
+      "name": "转为小写",
+      "description": "将输入字符串转为小写",
+      "input_params": {
+        "value": {
+          "type": "string",
+          "description": "输入文本",
+          "required": true
+        }
+      },
+      "output": {
+        "result": {
+          "type": "string",
+          "description": "小写转换结果"
+        }
+      }
+    }
+  },
+  "state_key_labels": {
+    "processed.ssid": "处理后的 WiFi SSID（小写）"
+  }
+}
