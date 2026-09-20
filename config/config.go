@@ -335,14 +335,18 @@ func DefaultAppConfig() AppConfig {
 
 // SupportedOperators 所有支持的条件运算符列表。
 var SupportedOperators = []string{
-	"equals", "not_equals",
-	"contains", "not_contains",
+	"equals", "not_equals", "equals_ignore_case",
+	"contains", "not_contains", "contains_ignore_case",
 	"greater_than", "less_than",
 	"greater_equal", "less_equal",
+	"between", "not_between",
 	"matches_regex", "not_matches_regex",
 	"starts_with", "ends_with",
 	"is_empty", "is_not_empty",
+	"is_true", "is_false",
 	"exists", "not_exists",
+	"changed", "not_changed",
+	"increased", "decreased",
 	"length_equals", "length_greater_than", "length_less_than",
 	"in", "not_in",
 }
@@ -465,8 +469,33 @@ type BatteryDetail struct {
 
 // NetworkTraffic 网络流量统计。
 type NetworkTraffic struct {
-	BytesSent     uint64 `json:"bytes_sent"`
-	BytesReceived uint64 `json:"bytes_received"`
-	PacketsSent   uint64 `json:"packets_sent"`
+	BytesSent       uint64 `json:"bytes_sent"`
+	BytesReceived   uint64 `json:"bytes_received"`
+	PacketsSent     uint64 `json:"packets_sent"`
 	PacketsReceived uint64 `json:"packets_received"`
+}
+
+// USBDeviceInfo USB 设备信息。
+type USBDeviceInfo struct {
+	Name         string `json:"name"`
+	VendorID     string `json:"vendor_id,omitempty"`
+	ProductID    string `json:"product_id,omitempty"`
+	DeviceID     string `json:"device_id,omitempty"`
+	Present      bool   `json:"present"`
+}
+
+// ServiceInfo Windows 服务状态。
+type ServiceInfo struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	Status      string `json:"status"` // Running / Stopped / Paused / ...
+	StartType   string `json:"start_type,omitempty"`
+}
+
+// BluetoothDeviceInfo 蓝牙设备信息。
+type BluetoothDeviceInfo struct {
+	Name      string `json:"name"`
+	Address   string `json:"address,omitempty"`
+	Connected bool   `json:"connected"`
+	Paired    bool   `json:"paired"`
 }

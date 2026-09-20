@@ -150,9 +150,6 @@ const (
 	IDCANCEL       = 2
 )
 
-// HWND_MESSAGE = (HWND)-3
-const hwndMessage = ^uintptr(2) // == (HWND)-3
-
 type wndClassExW struct {
 	CbSize        uint32
 	Style         uint32
@@ -365,14 +362,17 @@ func Run(cfg Config) {
 	}
 	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 
-	// 创建隐藏窗口（message-only）
+	// 创建隐藏的顶层窗口。
+	// 注意：不要用 HWND_MESSAGE（message-only）——
+	// SetForegroundWindow / TrackPopupMenu 对 message-only 窗口常失败，
+	// 会导致托盘右键菜单无响应。
 	hwnd, _, _ := procCreateWindowExW.Call(
 		uintptr(WS_EX_TOOLWINDOW),
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr("RuleCraftTray"))),
-		0,
+		0, // 无 WS_VISIBLE，不显示在任务栏/桌面上
 		0, 0, 0, 0,
-		hwndMessage, // HWND_MESSAGE
+		0, // 普通顶层窗口，而非 HWND_MESSAGE
 		0, hInst, 0,
 	)
 	if hwnd == 0 {
@@ -420,8 +420,11 @@ func trayWindowProc(hwnd uintptr, msgID uint32, wParam, lParam uintptr) uintptr 
 		}
 		return 0
 	case WM_TRAYNOTIFY:
+		// 经典回调（未 NIM_SETVERSION）：lParam 为鼠标消息。
+		// 0x0205 = WM_RBUTTONUP, 0x007B = WM_CONTEXTMENU
+		// 不要同时处理 WM_RBUTTONDOWN(0x0204)，否则可能弹出两次菜单。
 		switch lParam {
-		case 0x0205: // WM_CONTEXTMENU
+		case 0x0205, 0x007B:
 			showTrayMenu(hwnd)
 		case 0x0000, 0x0203: // 左键单击/双击 → 打开 Web
 			if onOpenWeb != nil {
@@ -554,12 +557,13 @@ func showTrayMenu(hwnd uintptr) {
 	procGetCursorPos := modUser32.NewProc("GetCursorPos")
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursorPos)))
 
+	// MSDN 托盘菜单标准写法：
+	// 1) 先 SetForegroundWindow，否则 TrackPopupMenu 可能不弹或立刻关闭
+	// 2) TrackPopupMenu 结束后再 PostMessage(WM_NULL)，修复菜单无法消失/焦点异常
 	procSetForegroundWindow.Call(hwnd)
 	procTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON|TPM_BOTTOMALIGN,
-		uintptr(cursorPos.X), uintptr(cursorPos.Y), 0, hwnd, 0)
+		uintptr(uint32(cursorPos.X)), uintptr(uint32(cursorPos.Y)), 0, hwnd, 0)
 	procDestroyMenu.Call(menu)
-
-	// 发送 WM_NULL 确保菜单正确获得/释放焦点
 	procPostMessageW.Call(hwnd, WM_NULL, 0, 0)
 }
 

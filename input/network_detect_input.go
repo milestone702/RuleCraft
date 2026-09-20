@@ -43,6 +43,26 @@ func (n *NetworkDetectInput) Configure(target string, port, timeout int, mode st
 	}
 }
 
+// ConfigureFromMap 从任务参数配置。
+func (n *NetworkDetectInput) ConfigureFromMap(params map[string]interface{}) error {
+	if params == nil {
+		return nil
+	}
+	if v, ok := params["target"].(string); ok && v != "" {
+		n.target = v
+	}
+	if v, ok := params["port"].(float64); ok && v > 0 {
+		n.port = int(v)
+	}
+	if v, ok := params["timeout"].(float64); ok && v > 0 {
+		n.timeout = int(v)
+	}
+	if v, ok := params["mode"].(string); ok && v != "" {
+		n.mode = v
+	}
+	return nil
+}
+
 // Host 返回纯主机地址（移除 URL 前缀）。
 func (n *NetworkDetectInput) host() string {
 	if len(n.target) > 7 && n.target[:7] == "http://" {

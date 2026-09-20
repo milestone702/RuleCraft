@@ -77,16 +77,16 @@ func (t *EdgeTriggerTracker) Reset(key string) {
 // Runner 是自动化引擎的轮询执行器。
 // 它周期性地采集输入数据、处理条件、检测边缘触发并执行输出动作。
 type Runner struct {
-	cfg        *config.AppConfig
-	registry   *plugin.Registry
-	evaluator  *ConditionEvaluator
-	edgeTrack  *EdgeTriggerTracker
-	scheduler  *TaskScheduler
-	states     map[string]interface{}
-	mu         sync.RWMutex
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	running    bool
+	cfg       *config.AppConfig
+	registry  *plugin.Registry
+	evaluator *ConditionEvaluator
+	edgeTrack *EdgeTriggerTracker
+	scheduler *TaskScheduler
+	states    map[string]interface{}
+	mu        sync.RWMutex
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	running   bool
 
 	// 回调事件
 	onStateChange func(key string, oldVal, newVal interface{})
@@ -234,35 +234,95 @@ func (r *Runner) doPoll(ctx context.Context) {
 	// 1. 采集所有输入插件数据
 	r.collectInputs(ctx)
 
-	// 2. 处理所有加载的任务（简化版：直接处理规则）
+	// 2. 处理所有加载的任务
 	r.evaluateRules(ctx)
 }
 
-// collectInputs 遍历注册的输入插件，采集数据并写入状态。
-func (r *Runner) collectInputs(ctx context.Context) {
-	sysCtx := &plugin.SystemContext{
-		States: r.states,
-		Ctx:    ctx,
-		Mu:     sync.RWMutex{},
-	}
-	// 注意：states 本身有 r.mu 保护，但这里我们直接传入引用
-	// 上层的 r.mu 由 doPoll 间接保护（同一 goroutine 串行执行）
+// 默认单插件采集超时。
+const defaultCollectTimeout = 8 * time.Second
 
-	for id, inputPlugin := range r.registry.GetAllInputs() {
+// 最大并行采集数。
+const maxCollectConcurrency = 6
+
+// collectInputs 并行遍历输入插件，各自写入独立 map，最后在锁内合并到全局状态。
+// 使用独立 map 可避免多插件并发写共享状态造成 data race。
+func (r *Runner) collectInputs(ctx context.Context) {
+	type collectResult struct {
+		id     string
+		states map[string]interface{}
+		err    error
+	}
+
+	plugins := r.registry.GetAllInputs()
+	if len(plugins) == 0 {
+		return
+	}
+
+	sem := make(chan struct{}, maxCollectConcurrency)
+	results := make(chan collectResult, len(plugins))
+	var wg sync.WaitGroup
+
+	for id, inputPlugin := range plugins {
 		if !inputPlugin.IsAvailable() {
 			continue
 		}
 
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+		wg.Add(1)
+		go func(id string, inputPlugin plugin.InputPlugin) {
+			defer wg.Done()
 
-		if err := inputPlugin.Collect(sysCtx); err != nil {
-			log.Printf("[engine] input plugin %s collect error: %v", id, err)
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			local := make(map[string]interface{})
+			pluginCtx := &plugin.SystemContext{
+				States: local,
+				Ctx:    ctx,
+			}
+
+			cctx, cancel := context.WithTimeout(ctx, defaultCollectTimeout)
+			defer cancel()
+
+			done := make(chan error, 1)
+			go func() {
+				done <- inputPlugin.Collect(pluginCtx)
+			}()
+
+			var err error
+			select {
+			case err = <-done:
+			case <-cctx.Done():
+				err = fmt.Errorf("collect timeout after %v", defaultCollectTimeout)
+			}
+
+			results <- collectResult{id: id, states: local, err: err}
+		}(id, inputPlugin)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	merged := make(map[string]interface{}, 32)
+	for res := range results {
+		if res.err != nil {
+			log.Printf("[engine] input plugin %s collect error: %v", res.id, res.err)
+		}
+		for k, v := range res.states {
+			merged[k] = v
 		}
 	}
+
+	r.mu.Lock()
+	for k, v := range merged {
+		r.states[k] = v
+	}
+	r.mu.Unlock()
 }
 
 // evaluateRules 对所有任务执行完整的四阶段评估循环。

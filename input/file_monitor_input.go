@@ -40,6 +40,36 @@ func (f *FileMonitorInput) Configure(paths []string, recursive bool) {
 	f.changes = nil
 }
 
+// ConfigureFromMap 从任务参数配置。
+func (f *FileMonitorInput) ConfigureFromMap(params map[string]interface{}) error {
+	if params == nil {
+		return nil
+	}
+	var paths []string
+	if v, ok := params["paths"]; ok {
+		switch sv := v.(type) {
+		case string:
+			if sv != "" {
+				paths = append(paths, sv)
+			}
+		case []interface{}:
+			for _, item := range sv {
+				if s, ok := item.(string); ok && s != "" {
+					paths = append(paths, s)
+				}
+			}
+		}
+	}
+	recursive := false
+	if v, ok := params["recursive"].(bool); ok {
+		recursive = v
+	}
+	if len(paths) > 0 {
+		f.Configure(paths, recursive)
+	}
+	return nil
+}
+
 func (f *FileMonitorInput) Collect(ctx *plugin.SystemContext) error {
 	f.mu.Lock()
 	paths := f.paths

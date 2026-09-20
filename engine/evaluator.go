@@ -1,7 +1,7 @@
 // Package engine 实现 RuleCraft 自动化引擎的核心逻辑：
 //   - 条件树递归求值 (evaluator.go)
 //   - 轮询引擎 + 边缘触发 (runner.go)
-//   - 处理器管道 DAG 调度 (processor_engine.go)
+//   - 处理器管道 DAG 调度 (scheduler.go)
 //   - 子进程管理 (script_runner.go)
 package engine
 
@@ -25,6 +25,8 @@ type ConditionEvaluator struct {
 	mu               sync.Mutex
 	thresholdCounters map[string]int       // nodeKey → 连续成立次数
 	stableTimers      map[string]time.Time // nodeKey → 首次成立时间
+	prevValues        map[string]interface{} // nodeKey → 上一轮状态值（changed/increased 等）
+	regexCache        map[string]*regexp.Regexp
 }
 
 // NewConditionEvaluator 创建条件求值器。
@@ -32,6 +34,8 @@ func NewConditionEvaluator() *ConditionEvaluator {
 	return &ConditionEvaluator{
 		thresholdCounters: make(map[string]int),
 		stableTimers:      make(map[string]time.Time),
+		prevValues:        make(map[string]interface{}),
+		regexCache:        make(map[string]*regexp.Regexp),
 	}
 }
 
@@ -127,8 +131,7 @@ func (ce *ConditionEvaluator) evalLeaf(node *config.ConditionNode, states map[st
 			if ce.thresholdCounters[key] < node.Threshold {
 				return false, nil // 未达阈值
 			}
-			// 已达阈值，重置计数器
-			delete(ce.thresholdCounters, key)
+			// 已达阈值，保持为 true 直到条件变 false
 		} else {
 			delete(ce.thresholdCounters, key)
 		}
@@ -191,10 +194,32 @@ func (ce *ConditionEvaluator) evalStateCondition(node *config.ConditionNode, sta
 			return true, nil // 非字符串值视为非空
 		}
 		return s != "", nil
+
+	// ---- 布尔判断 ----
+	case "is_true":
+		return exists && toBoolLoose(stateValue), nil
+	case "is_false":
+		return !exists || !toBoolLoose(stateValue), nil
+
+	// ---- 变化检测（需要上一轮值）----
+	case "changed":
+		return ce.compareChanged(node, stateValue, exists, false)
+	case "not_changed":
+		return ce.compareChanged(node, stateValue, exists, true)
+	case "increased":
+		return ce.compareDelta(node, stateValue, exists, false)
+	case "decreased":
+		return ce.compareDelta(node, stateValue, exists, true)
 	}
 
 	// 如果状态键不存在，非存在性操作符返回 false
 	if !exists {
+		// 仍需更新 prevValues 以便后续轮次能检测变化
+		if isHistoryOperator(node.Operator) {
+			ce.mu.Lock()
+			ce.prevValues[nodeKey(node)] = nil
+			ce.mu.Unlock()
+		}
 		return false, nil
 	}
 
@@ -204,8 +229,8 @@ func (ce *ConditionEvaluator) evalStateCondition(node *config.ConditionNode, sta
 		return compareEquals(stateValue, node.Value), nil
 	case "not_equals":
 		return !compareEquals(stateValue, node.Value), nil
-
-	// ---- 字符串包含 ----
+	case "equals_ignore_case":
+		return compareEqualsIgnoreCase(stateValue, node.Value), nil
 
 	// ---- 字符串包含 ----
 	case "contains":
@@ -224,6 +249,14 @@ func (ce *ConditionEvaluator) evalStateCondition(node *config.ConditionNode, sta
 		}
 		return !strings.Contains(s, t), nil
 
+	case "contains_ignore_case":
+		s, a := toString(stateValue)
+		t, _ := toString(node.Value)
+		if !a || t == "" {
+			return false, nil
+		}
+		return strings.Contains(strings.ToLower(s), strings.ToLower(t)), nil
+
 	// ---- 数值比较 ----
 	case "greater_than":
 		return compareNumeric(stateValue, node.Value, func(a, b float64) bool { return a > b }), nil
@@ -234,11 +267,21 @@ func (ce *ConditionEvaluator) evalStateCondition(node *config.ConditionNode, sta
 	case "less_equal":
 		return compareNumeric(stateValue, node.Value, func(a, b float64) bool { return a <= b }), nil
 
+	// ---- 区间 ----
+	case "between":
+		return compareBetween(stateValue, node.Value)
+	case "not_between":
+		ok, err := compareBetween(stateValue, node.Value)
+		if err != nil {
+			return false, err
+		}
+		return !ok, nil
+
 	// ---- 字符串模式匹配 ----
 	case "matches_regex":
-		return compareRegex(stateValue, node.Value, false)
+		return ce.compareRegex(stateValue, node.Value, false)
 	case "not_matches_regex":
-		return compareRegex(stateValue, node.Value, true)
+		return ce.compareRegex(stateValue, node.Value, true)
 
 	case "starts_with":
 		s, a := toString(stateValue)
@@ -290,6 +333,74 @@ func (ce *ConditionEvaluator) evalStateCondition(node *config.ConditionNode, sta
 	default:
 		return false, fmt.Errorf("unknown operator: %s", node.Operator)
 	}
+}
+
+// isHistoryOperator 判断运算符是否依赖历史值。
+func isHistoryOperator(op string) bool {
+	switch op {
+	case "changed", "not_changed", "increased", "decreased":
+		return true
+	}
+	return false
+}
+
+// compareChanged 比较当前值与上一轮值是否发生变化。
+func (ce *ConditionEvaluator) compareChanged(node *config.ConditionNode, stateValue interface{}, exists, negate bool) (bool, error) {
+	key := nodeKey(node)
+	ce.mu.Lock()
+	prev, hadPrev := ce.prevValues[key]
+	// 首轮没有历史，先记录并返回 false（不触发）
+	if !hadPrev {
+		ce.prevValues[key] = stateValue
+		ce.mu.Unlock()
+		return false, nil
+	}
+	ce.prevValues[key] = stateValue
+	ce.mu.Unlock()
+
+	changed := !exists || !compareEquals(prev, stateValue)
+	if negate {
+		return !changed, nil
+	}
+	return changed, nil
+}
+
+// compareDelta 比较数值是否增加/减少（可带最小变化量）。
+func (ce *ConditionEvaluator) compareDelta(node *config.ConditionNode, stateValue interface{}, exists, wantDecrease bool) (bool, error) {
+	key := nodeKey(node)
+	cur, ok := toFloat(stateValue)
+	if !exists || !ok {
+		ce.mu.Lock()
+		delete(ce.prevValues, key)
+		ce.mu.Unlock()
+		return false, nil
+	}
+
+	ce.mu.Lock()
+	prevRaw, hadPrev := ce.prevValues[key]
+	ce.prevValues[key] = stateValue
+	ce.mu.Unlock()
+
+	if !hadPrev {
+		return false, nil
+	}
+	prev, ok := toFloat(prevRaw)
+	if !ok {
+		return false, nil
+	}
+
+	minDelta := 0.0
+	if node.Value != nil {
+		if d, ok := toFloat(node.Value); ok {
+			minDelta = math.Abs(d)
+		}
+	}
+
+	diff := cur - prev
+	if wantDecrease {
+		diff = -diff
+	}
+	return diff > minDelta || (minDelta == 0 && diff > 0), nil
 }
 
 // evalConstant 求值常量条件（用于测试或占位）。
@@ -361,6 +472,16 @@ func compareEquals(a, b interface{}) bool {
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
+// compareEqualsIgnoreCase 忽略大小写的宽松相等比较。
+func compareEqualsIgnoreCase(a, b interface{}) bool {
+	sa, oka := toString(a)
+	sb, okb := toString(b)
+	if !oka || !okb {
+		return compareEquals(a, b)
+	}
+	return strings.EqualFold(sa, sb)
+}
+
 // compareNumeric 数值比较，使用给定的比较函数。
 func compareNumeric(stateVal, targetVal interface{}, cmp func(float64, float64) bool) bool {
 	a, ok := toFloat(stateVal)
@@ -377,8 +498,51 @@ func compareNumeric(stateVal, targetVal interface{}, cmp func(float64, float64) 
 	return cmp(a, b)
 }
 
-// compareRegex 正则匹配比较。
-func compareRegex(stateVal, pattern interface{}, negate bool) (bool, error) {
+// compareBetween 判断数值是否落在 [min, max] 闭区间。
+// value 支持 [min, max] 数组，或 "min,max" 字符串。
+func compareBetween(stateVal, rangeVal interface{}) (bool, error) {
+	a, ok := toFloat(stateVal)
+	if !ok {
+		return false, nil
+	}
+
+	var minV, maxV float64
+	switch r := rangeVal.(type) {
+	case []interface{}:
+		if len(r) != 2 {
+			return false, fmt.Errorf("between requires [min, max], got %d elements", len(r))
+		}
+		minV, ok = toFloat(r[0])
+		if !ok {
+			return false, fmt.Errorf("between: invalid min value")
+		}
+		maxV, ok = toFloat(r[1])
+		if !ok {
+			return false, fmt.Errorf("between: invalid max value")
+		}
+	case string:
+		parts := strings.Split(r, ",")
+		if len(parts) != 2 {
+			return false, fmt.Errorf("between: value must be \"min,max\" or [min,max]")
+		}
+		mn, err1 := parseFloat(strings.TrimSpace(parts[0]))
+		mx, err2 := parseFloat(strings.TrimSpace(parts[1]))
+		if err1 != nil || err2 != nil {
+			return false, fmt.Errorf("between: invalid range %q", r)
+		}
+		minV, maxV = mn, mx
+	default:
+		return false, fmt.Errorf("between requires array or \"min,max\" string value")
+	}
+
+	if minV > maxV {
+		minV, maxV = maxV, minV
+	}
+	return a >= minV && a <= maxV, nil
+}
+
+// compareRegex 正则匹配比较（带缓存）。
+func (ce *ConditionEvaluator) compareRegex(stateVal, pattern interface{}, negate bool) (bool, error) {
 	s, ok := toString(stateVal)
 	if !ok {
 		return false, nil
@@ -388,7 +552,7 @@ func compareRegex(stateVal, pattern interface{}, negate bool) (bool, error) {
 		return false, fmt.Errorf("regex pattern must be a string")
 	}
 
-	re, err := regexp.Compile(p)
+	re, err := ce.getCompiledRegex(p)
 	if err != nil {
 		return false, fmt.Errorf("invalid regex pattern: %w", err)
 	}
@@ -398,6 +562,25 @@ func compareRegex(stateVal, pattern interface{}, negate bool) (bool, error) {
 		return !matched, nil
 	}
 	return matched, nil
+}
+
+// getCompiledRegex 获取缓存的正则，无缓存时编译并写入。
+func (ce *ConditionEvaluator) getCompiledRegex(pattern string) (*regexp.Regexp, error) {
+	ce.mu.Lock()
+	defer ce.mu.Unlock()
+	if re, ok := ce.regexCache[pattern]; ok {
+		return re, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	// 简单容量控制，避免无限增长
+	if len(ce.regexCache) > 256 {
+		ce.regexCache = make(map[string]*regexp.Regexp)
+	}
+	ce.regexCache[pattern] = re
+	return re, nil
 }
 
 // compareIn 检查值是否在枚举列表中。
@@ -441,6 +624,8 @@ func toFloat(v interface{}) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
 		return n, true
+	case float32:
+		return float64(n), true
 	case int:
 		return float64(n), true
 	case int32:
@@ -458,6 +643,25 @@ func toFloat(v interface{}) (float64, bool) {
 		return f, err == nil
 	default:
 		return 0, false
+	}
+}
+
+// toBoolLoose 宽松布尔转换。
+func toBoolLoose(v interface{}) bool {
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		s := strings.ToLower(strings.TrimSpace(b))
+		return s == "true" || s == "1" || s == "yes" || s == "on"
+	case float64:
+		return b != 0
+	case int:
+		return b != 0
+	case int64:
+		return b != 0
+	default:
+		return false
 	}
 }
 

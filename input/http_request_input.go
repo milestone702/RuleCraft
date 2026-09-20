@@ -34,6 +34,20 @@ func (h *HTTPRequestInput) Configure(url string, timeout int) {
 	}
 }
 
+// ConfigureFromMap 从任务参数配置。
+func (h *HTTPRequestInput) ConfigureFromMap(params map[string]interface{}) error {
+	if params == nil {
+		return nil
+	}
+	if v, ok := params["url"].(string); ok && v != "" {
+		h.url = v
+	}
+	if v, ok := params["timeout"].(float64); ok && v > 0 {
+		h.timeout = int(v)
+	}
+	return nil
+}
+
 func (h *HTTPRequestInput) Collect(ctx *plugin.SystemContext) error {
 	if h.url == "" {
 		return nil

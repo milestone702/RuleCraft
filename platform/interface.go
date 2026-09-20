@@ -145,6 +145,126 @@ type Platform interface {
 
 	// SetNetworkAdapter 启用或禁用网络适配器。
 	SetNetworkAdapter(name string, enabled bool) error
+
+	// ======================================================================
+	// 扩展传感器 3
+	// ======================================================================
+
+	// ListUSBDevices 列出当前 USB 设备。
+	ListUSBDevices() ([]config.USBDeviceInfo, error)
+
+	// GetServiceStatus 查询 Windows 服务状态。
+	GetServiceStatus(name string) (*config.ServiceInfo, error)
+
+	// ListBluetoothDevices 列出蓝牙设备。
+	ListBluetoothDevices() ([]config.BluetoothDeviceInfo, error)
+
+	// GetActivePowerPlan 获取当前电源计划（GUID 或友好名）。
+	GetActivePowerPlan() (string, error)
+
+	// ======================================================================
+	// 扩展控制 3
+	// ======================================================================
+
+	// SetMute 设置系统静音/取消静音。
+	SetMute(muted bool) error
+
+	// ToggleMute 切换静音状态，返回切换后的 muted。
+	ToggleMute() (bool, error)
+
+	// RestartExplorer 重启 Windows 资源管理器。
+	RestartExplorer() error
+
+	// OpenControlPanelPage 打开控制面板页或 Settings URI。
+	OpenControlPanelPage(page string) error
+
+	// ======================================================================
+	// 扩展传感器 4
+	// ======================================================================
+
+	// GetKeyboardLockStates 返回 CapsLock / NumLock / ScrollLock 状态。
+	GetKeyboardLockStates() (capsLock, numLock, scrollLock bool, err error)
+
+	// GetCursorPosition 获取鼠标光标屏幕坐标。
+	GetCursorPosition() (x, y int, err error)
+
+	// IsForegroundFullscreen 判断前台窗口是否全屏。
+	IsForegroundFullscreen() (bool, error)
+
+	// GetInputLanguage 返回当前键盘布局语言标识（如 "0804" / "0409"）。
+	GetInputLanguage() (string, error)
+
+	// GetThemeMode 返回系统/应用主题（"dark" / "light"）。
+	GetThemeMode() (string, error)
+
+	// GetPendingReboot 检查系统是否等待重启；reason 为简要说明。
+	GetPendingReboot() (pending bool, reason string, err error)
+
+	// GetProxyInfo 返回系统代理状态。
+	GetProxyInfo() (enabled bool, server string, err error)
+
+	// GetDefaultPrinter 获取默认打印机名称。
+	GetDefaultPrinter() (string, error)
+
+	// GetWallpaperPath 获取当前壁纸路径。
+	GetWallpaperPath() (string, error)
+
+	// GetRecycleBinInfo 获取回收站文件数与约占用 MB。
+	GetRecycleBinInfo() (count int, sizeMB float64, err error)
+
+	// GetGPUInfo 获取主显卡名称（简要）。
+	GetGPUInfo() (name string, err error)
+
+	// ======================================================================
+	// 扩展控制 4
+	// ======================================================================
+
+	// KillProcessByName 按进程名（可不含 .exe）终止全部匹配进程。
+	KillProcessByName(name string) error
+
+	// MediaKey 发送多媒体按键（play_pause / next / prev / volume_up / volume_down / stop）。
+	MediaKey(action string) error
+
+	// FlushDNS 清空 DNS 解析缓存。
+	FlushDNS() error
+
+	// SetDNS 设置指定适配器的 DNS（server 为空则自动获取）。
+	SetDNS(adapter, server string) error
+
+	// SetThemeMode 设置系统/应用主题（"dark" / "light"）。
+	SetThemeMode(mode string) error
+
+	// EmptyRecycleBin 清空回收站。
+	EmptyRecycleBin() error
+
+	// ======================================================================
+	// 扩展传感器 5
+	// ======================================================================
+
+	// GetStartupItems 列出启动项名称（Run 键 + Startup 文件夹快捷方式名）。
+	GetStartupItems() ([]string, error)
+
+	// GetScheduledTaskStatus 查询计划任务状态；found=false 表示不存在。
+	GetScheduledTaskStatus(name string) (status string, found bool, err error)
+
+	// GetHostsInfo 返回 hosts 文件修改时间 Unix 秒与行数。
+	GetHostsInfo() (mtime int64, lines int, err error)
+
+	// GetFirewallStatus 返回各防火墙配置文件是否启用（domain/private/public）。
+	GetFirewallStatus() (domain, private, public bool, err error)
+
+	// IsBatterySaver 是否处于节电模式。
+	IsBatterySaver() (bool, error)
+
+	// ======================================================================
+	// 扩展控制 5
+	// ======================================================================
+
+	// SetWindowTopmost 将标题匹配的窗口设为置顶/取消置顶。
+	SetWindowTopmost(title string, topmost bool) error
+
+	// SetProcessPriority 设置指定进程优先级（idle/below_normal/normal/above_normal/high）。
+	SetProcessPriority(name, priority string) error
 }
 
 // ============================================================================
@@ -281,4 +401,100 @@ func (p *NoopPlatform) TakeScreenshot(path string) error {
 }
 func (p *NoopPlatform) SetClipboardText(text string) error {
 	return &NotImplementedError{Method: "SetClipboardText"}
+}
+func (p *NoopPlatform) ListUSBDevices() ([]config.USBDeviceInfo, error) {
+	return nil, &NotImplementedError{Method: "ListUSBDevices"}
+}
+func (p *NoopPlatform) GetServiceStatus(name string) (*config.ServiceInfo, error) {
+	return nil, &NotImplementedError{Method: "GetServiceStatus"}
+}
+func (p *NoopPlatform) ListBluetoothDevices() ([]config.BluetoothDeviceInfo, error) {
+	return nil, &NotImplementedError{Method: "ListBluetoothDevices"}
+}
+func (p *NoopPlatform) GetActivePowerPlan() (string, error) {
+	return "", &NotImplementedError{Method: "GetActivePowerPlan"}
+}
+func (p *NoopPlatform) SetMute(muted bool) error {
+	return &NotImplementedError{Method: "SetMute"}
+}
+func (p *NoopPlatform) ToggleMute() (bool, error) {
+	return false, &NotImplementedError{Method: "ToggleMute"}
+}
+func (p *NoopPlatform) RestartExplorer() error {
+	return &NotImplementedError{Method: "RestartExplorer"}
+}
+func (p *NoopPlatform) OpenControlPanelPage(page string) error {
+	return &NotImplementedError{Method: "OpenControlPanelPage"}
+}
+func (p *NoopPlatform) GetKeyboardLockStates() (bool, bool, bool, error) {
+	return false, false, false, &NotImplementedError{Method: "GetKeyboardLockStates"}
+}
+func (p *NoopPlatform) GetCursorPosition() (int, int, error) {
+	return 0, 0, &NotImplementedError{Method: "GetCursorPosition"}
+}
+func (p *NoopPlatform) IsForegroundFullscreen() (bool, error) {
+	return false, &NotImplementedError{Method: "IsForegroundFullscreen"}
+}
+func (p *NoopPlatform) GetInputLanguage() (string, error) {
+	return "", &NotImplementedError{Method: "GetInputLanguage"}
+}
+func (p *NoopPlatform) GetThemeMode() (string, error) {
+	return "", &NotImplementedError{Method: "GetThemeMode"}
+}
+func (p *NoopPlatform) GetPendingReboot() (bool, string, error) {
+	return false, "", &NotImplementedError{Method: "GetPendingReboot"}
+}
+func (p *NoopPlatform) GetProxyInfo() (bool, string, error) {
+	return false, "", &NotImplementedError{Method: "GetProxyInfo"}
+}
+func (p *NoopPlatform) GetDefaultPrinter() (string, error) {
+	return "", &NotImplementedError{Method: "GetDefaultPrinter"}
+}
+func (p *NoopPlatform) GetWallpaperPath() (string, error) {
+	return "", &NotImplementedError{Method: "GetWallpaperPath"}
+}
+func (p *NoopPlatform) GetRecycleBinInfo() (int, float64, error) {
+	return 0, 0, &NotImplementedError{Method: "GetRecycleBinInfo"}
+}
+func (p *NoopPlatform) GetGPUInfo() (string, error) {
+	return "", &NotImplementedError{Method: "GetGPUInfo"}
+}
+func (p *NoopPlatform) KillProcessByName(name string) error {
+	return &NotImplementedError{Method: "KillProcessByName"}
+}
+func (p *NoopPlatform) MediaKey(action string) error {
+	return &NotImplementedError{Method: "MediaKey"}
+}
+func (p *NoopPlatform) FlushDNS() error {
+	return &NotImplementedError{Method: "FlushDNS"}
+}
+func (p *NoopPlatform) SetDNS(adapter, server string) error {
+	return &NotImplementedError{Method: "SetDNS"}
+}
+func (p *NoopPlatform) SetThemeMode(mode string) error {
+	return &NotImplementedError{Method: "SetThemeMode"}
+}
+func (p *NoopPlatform) EmptyRecycleBin() error {
+	return &NotImplementedError{Method: "EmptyRecycleBin"}
+}
+func (p *NoopPlatform) GetStartupItems() ([]string, error) {
+	return nil, &NotImplementedError{Method: "GetStartupItems"}
+}
+func (p *NoopPlatform) GetScheduledTaskStatus(name string) (string, bool, error) {
+	return "", false, &NotImplementedError{Method: "GetScheduledTaskStatus"}
+}
+func (p *NoopPlatform) GetHostsInfo() (int64, int, error) {
+	return 0, 0, &NotImplementedError{Method: "GetHostsInfo"}
+}
+func (p *NoopPlatform) GetFirewallStatus() (bool, bool, bool, error) {
+	return false, false, false, &NotImplementedError{Method: "GetFirewallStatus"}
+}
+func (p *NoopPlatform) IsBatterySaver() (bool, error) {
+	return false, &NotImplementedError{Method: "IsBatterySaver"}
+}
+func (p *NoopPlatform) SetWindowTopmost(title string, topmost bool) error {
+	return &NotImplementedError{Method: "SetWindowTopmost"}
+}
+func (p *NoopPlatform) SetProcessPriority(name, priority string) error {
+	return &NotImplementedError{Method: "SetProcessPriority"}
 }

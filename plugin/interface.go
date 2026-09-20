@@ -70,6 +70,12 @@ type InputPlugin interface {
 	IsAvailable() bool
 }
 
+// ConfigurableInput 可选接口：支持从任务 data_source 的 params 配置插件。
+type ConfigurableInput interface {
+	// ConfigureFromMap 根据参数 map 配置插件（幂等，可重复调用）。
+	ConfigureFromMap(params map[string]interface{}) error
+}
+
 // OutputPlugin 输出插件（Actuator）接口。
 // 每个输出插件负责执行一种系统控制动作。
 type OutputPlugin interface {

@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"rulecraft/config"
 )
@@ -24,6 +26,11 @@ type PluginManager struct {
 	inputDir  string // Input_Plugins/
 	outputDir string // Output_Plugins/
 	tasksDir  string // tasks/
+
+	// 任务文件 mtime 缓存
+	cacheMu    sync.Mutex
+	taskCache  map[string]*config.TaskDefinition
+	taskMtimes map[string]time.Time
 }
 
 // NewPluginManager 创建文件加载器。
@@ -32,6 +39,8 @@ func NewPluginManager(inputDir, outputDir, tasksDir string) *PluginManager {
 		inputDir:  inputDir,
 		outputDir: outputDir,
 		tasksDir:  tasksDir,
+		taskCache: make(map[string]*config.TaskDefinition),
+		taskMtimes: make(map[string]time.Time),
 	}
 }
 
@@ -168,6 +177,78 @@ func (pm *PluginManager) LoadAllTasks() (map[string]*config.TaskDefinition, erro
 	return tasks, nil
 }
 
+// LoadAllTasksCached 按文件 mtime 缓存任务定义：仅当文件变更时重新解析。
+// 首次调用或文件被修改/删除/新增时会刷新缓存。
+func (pm *PluginManager) LoadAllTasksCached() (map[string]*config.TaskDefinition, error) {
+	pm.cacheMu.Lock()
+	defer pm.cacheMu.Unlock()
+
+	if pm.taskCache == nil {
+		pm.taskCache = make(map[string]*config.TaskDefinition)
+		pm.taskMtimes = make(map[string]time.Time)
+	}
+
+	entries, err := os.ReadDir(pm.tasksDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			pm.taskCache = make(map[string]*config.TaskDefinition)
+			pm.taskMtimes = make(map[string]time.Time)
+			return pm.cloneTaskCache(), nil
+		}
+		return nil, fmt.Errorf("read tasks dir failed: %w", err)
+	}
+
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		taskID := strings.TrimSuffix(entry.Name(), ".json")
+		seen[taskID] = true
+
+		path := filepath.Join(pm.tasksDir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		mtime := info.ModTime()
+
+		if old, ok := pm.taskMtimes[taskID]; ok && old.Equal(mtime) {
+			if _, exists := pm.taskCache[taskID]; exists {
+				continue // 未变更
+			}
+		}
+
+		task, err := pm.loadTaskFile(path)
+		if err != nil {
+			log.Printf("[loader] skip task %s: %v", entry.Name(), err)
+			delete(pm.taskCache, taskID)
+			delete(pm.taskMtimes, taskID)
+			continue
+		}
+		pm.taskCache[taskID] = task
+		pm.taskMtimes[taskID] = mtime
+	}
+
+	// 清理已删除的任务
+	for id := range pm.taskCache {
+		if !seen[id] {
+			delete(pm.taskCache, id)
+			delete(pm.taskMtimes, id)
+		}
+	}
+
+	return pm.cloneTaskCache(), nil
+}
+
+func (pm *PluginManager) cloneTaskCache() map[string]*config.TaskDefinition {
+	out := make(map[string]*config.TaskDefinition, len(pm.taskCache))
+	for k, v := range pm.taskCache {
+		out[k] = v
+	}
+	return out
+}
+
 // ============================================================================
 // 文件写入（供 API 持久化使用）
 // ============================================================================
@@ -216,11 +297,21 @@ func (pm *PluginManager) SaveTaskDef(task *config.TaskDefinition) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write task failed: %w", err)
 	}
+
+	// 使缓存失效，下次加载重新解析
+	pm.cacheMu.Lock()
+	delete(pm.taskCache, task.TaskID)
+	delete(pm.taskMtimes, task.TaskID)
+	pm.cacheMu.Unlock()
 	return nil
 }
 
 // DeleteTaskDef 删除 task.json。
 func (pm *PluginManager) DeleteTaskDef(taskID string) error {
 	path := filepath.Join(pm.tasksDir, taskID+".json")
+	pm.cacheMu.Lock()
+	delete(pm.taskCache, taskID)
+	delete(pm.taskMtimes, taskID)
+	pm.cacheMu.Unlock()
 	return os.Remove(path)
 }
